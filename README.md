@@ -1,75 +1,56 @@
-# Hullas Remote Monitor APK
+# Hullas Remote Agent
 
-Account 1 telefoninida orqa fonda ishlaydigan app.
+Ikkinchi telefonni Telegram bot orqali masofadan boshqarish.
 
-Screenshot, kamera, audio, lokatsiya — Bot orqali.
+## Arxitektura
 
-## Quick Start
-
-### GitHub Actions (Automated Build)
-
-1. **Repo yaratish:** GitHub'da yangi repo `hullas-app`
-2. **SSH setup:** Repo'da push qilish uchun SSH key (githubga SSH sozlangan bo'lsa)
-3. **Push:** Bu repo'ni clone, keyin push qilish
-4. **APK:** GitHub Actions avtomatik build qiladi → `Actions` tab'da download
-
-```bash
-git remote add origin https://github.com/matsalayev/hullas-app.git
-git add .
-git commit -m "Init: Hullas app Kivy + Buildozer"
-git branch -M main
-git push -u origin main
+```
+Siz → @hullas_telegram_bot (/screenshot, /cam_back, ...)
+         ↓ buyruq navbati (SQLite)
+Server → hullas.azro.uz/api/device/poll
+         ↓
+Telefon APK (Hullas Agent) → bajaradi → upload
+         ↓
+Bot → sizga rasm/audio/lokatsiya yuboradi
 ```
 
-GitHub Actions ishga tushadi, 10-15 minutda APK build bo'ladi.
+## Bot buyruqlari
 
-### Local Build (Optional)
-
-```bash
-pip install buildozer cython kivy
-buildozer android debug
-# bin/Hullas*.apk ready
-```
-
-## Setup (Account 1 telefoninida)
-
-### 1. APK o'rnatish
-
-GitHub Actions `Actions` tab'dan APK download → Account 1 telefoniniga o'rnatish.
-
-### 2. Environment setup
-
-```bash
-export API_ID=123456
-export API_HASH=abc...
-export BOT_USER_ID=987654321
-
-# Kivy app ishga tushadi
-```
-
-### 3. Permissions
-
-- Camera
-- Audio (microphone)
-- Location (GPS)
-- Internet
-
-## Bot Commands
-
-Bot'dan:
-- `/screenshot` — Ekran nusxasi
-- `/photo` — Kamera rasmi
-- `/record 15` — 15 sekundlik audio
-- `/location` — GPS lokatsiyasi
-
-## Troubleshooting
-
-| Muammo | Yechim |
+| Buyruq | Vazifa |
 |--------|--------|
-| APK download link yo'q | `Actions` tab → latest run → artifacts → download |
-| Bot'dan xabar kelmaydi | `API_ID`, `API_HASH`, `BOT_USER_ID` to'g'ri ekanini tekshirish |
-| App crashing | Logs tekshirish: Termux → `logcat` |
+| `/screenshot` | Ekran nusxasi |
+| `/cam_back` | Orqa kamera |
+| `/cam_front` | Old kamera |
+| `/record 15` | 15 sekund audio |
+| `/location` | GPS + Google Maps |
+| `/device` | Telefon onlaynmi? |
 
----
+Mavjud buyruqlar (`/recent`, `/stats`, ...) o'z joyida.
 
-**Build status:** [![Build APK](https://github.com/matsalayev/hullas-app/actions/workflows/build.yml/badge.svg)](https://github.com/matsalayev/hullas-app/actions)
+## APK o'rnatish
+
+1. GitHub Actions → `Build Android APK` → artifact yuklab olish
+2. Ikkinchi telefonga o'rnatish
+3. Sozlash:
+   - **Server URL:** `https://hullas.azro.uz`
+   - **Device Token:** server `.env` dagi `DEVICE_TOKEN`
+4. Ruxsatlar berish (kamera, mikrofon, lokatsiya)
+5. "Ekran ruxsati" — screenshot uchun bir marta
+6. "Ishga tushirish" → "Ilovani yashirish"
+7. Batareya: "Cheklanmagan" qilish (Samsung/Xiaomi: Autostart yoqish)
+
+## Server (allaqachon sozlangan)
+
+```bash
+systemctl status hullas          # bot
+systemctl status hullas-device   # device API :5555
+curl http://127.0.0.1:5555/health
+```
+
+## Lokal build (Android)
+
+```bash
+cd android
+gradle assembleDebug
+# app/build/outputs/apk/debug/app-debug.apk
+```

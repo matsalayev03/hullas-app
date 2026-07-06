@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Hullas</string>
+    <string name="service_channel">Hullas Agent</string>
+    <string name="service_running">Orqa fonda ishlayapti</string>
+    <string name="setup_title">Hullas Agent Sozlash</string>
+    <string name="server_url">Server URL</string>
+    <string name="device_token">Device Token</string>
+    <string name="start_service">Ishga tushirish</string>
+    <string name="hide_app">Ilovani yashirish</string>
+    <string name="grant_screenshot">Ekran ruxsati</string>
+    <string name="grant_permissions">Ruxsatlar</string>
+</resources>

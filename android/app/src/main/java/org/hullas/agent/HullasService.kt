@@ -64,27 +64,7 @@ class HullasService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle(getString(R.string.notif_title))
-            .setContentText(getString(R.string.notif_text))
-            .setSmallIcon(R.drawable.ic_stat)
-            .setContentIntent(pi)
-            .setOngoing(true)
-            .build()
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                startForeground(
-                    NOTIF_ID, notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
-                )
-            } else {
-                startForeground(NOTIF_ID, notification)
-            }
-        } catch (e: Exception) {
-            Log.e(tag, "startForeground", e)
-            startForeground(NOTIF_ID, notification)
-        }
+        setForegroundMode(screenshot = false)
     }
 
     private fun startPolling() {
@@ -113,12 +93,53 @@ class HullasService : Service() {
         }
     }
 
+    private fun buildNotification(): Notification {
+        val channelId = "hullas_monitor"
+        val pi = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        return NotificationCompat.Builder(this, channelId)
+            .setContentTitle(getString(R.string.notif_title))
+            .setContentText(getString(R.string.notif_text))
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentIntent(pi)
+            .setOngoing(true)
+            .build()
+    }
+
+    private fun setForegroundMode(screenshot: Boolean) {
+        val notification = buildNotification()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                val type = if (screenshot) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                } else {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                }
+                startForeground(NOTIF_ID, notification, type)
+            } else {
+                startForeground(NOTIF_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "setForegroundMode", e)
+            startForeground(NOTIF_ID, notification)
+        }
+    }
+
     private suspend fun handleCommand(
         api: ApiClient,
         executor: CommandExecutor,
         cmd: Command,
     ) {
-        val result = executor.execute(cmd)
+        if (cmd.cmd == "screenshot") setForegroundMode(screenshot = true)
+        val result = try {
+            executor.execute(cmd)
+        } finally {
+            if (cmd.cmd == "screenshot") setForegroundMode(screenshot = false)
+        }
         result.onSuccess { file ->
             if (cmd.cmd == "location") return@onSuccess
             if (file != null) {

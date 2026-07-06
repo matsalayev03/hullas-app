@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name"> </string>
+    <string name="app_name">Hullas Agent</string>
+    <string name="notif_title">Hullas monitoring</string>
+    <string name="notif_text">Server bilan bog\'langan</string>
+    <string name="status_stopped">To\'xtatilgan</string>
+    <string name="status_running">Ishlayapti</string>
+    <string name="btn_start">Monitoringni boshlash</string>
+    <string name="btn_stop">To\'xtatish</string>
+    <string name="btn_perms">Ruxsatlar</string>
+    <string name="btn_screen">Ekran ruxsati</string>
+    <string name="btn_battery">Batareya (cheklanmasin)</string>
 </resources>

@@ -11,8 +11,8 @@ android {
         applicationId = "org.hullas.agent"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "2.0.1"
+        versionCode = 4
+        versionName = "3.0.0"
 
         buildConfigField("String", "SERVER_URL", "\"https://hullas.azro.uz\"")
         buildConfigField(

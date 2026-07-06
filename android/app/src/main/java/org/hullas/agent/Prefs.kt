@@ -18,12 +18,23 @@ object Prefs {
     fun isConfigured(ctx: Context): Boolean =
         serverUrl(ctx).isNotBlank() && deviceToken(ctx).isNotBlank()
 
-    fun isInitialized(ctx: Context): Boolean =
-        sp(ctx).getBoolean("initialized", false)
+    fun isMonitoring(ctx: Context): Boolean =
+        sp(ctx).getBoolean("monitoring", false)
 
-    fun setInitialized(ctx: Context) {
-        sp(ctx).edit().putBoolean("initialized", true).apply()
+    fun setMonitoring(ctx: Context, on: Boolean) {
+        sp(ctx).edit().putBoolean("monitoring", on).apply()
     }
+
+    fun setLastHeartbeat(ctx: Context) {
+        sp(ctx).edit()
+            .putString("last_hb", java.text.SimpleDateFormat(
+                "HH:mm:ss", java.util.Locale.getDefault(),
+            ).format(java.util.Date()))
+            .apply()
+    }
+
+    fun lastHeartbeat(ctx: Context): String =
+        sp(ctx).getString("last_hb", "-") ?: "-"
 
     fun screenshotGranted(ctx: Context): Boolean =
         sp(ctx).getBoolean("screenshot_granted", false)

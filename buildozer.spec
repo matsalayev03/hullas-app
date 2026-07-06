@@ -4,6 +4,7 @@
 title = Hullas Remote Monitor
 package.name = hullas_app
 package.domain = org.hullas
+version = 1.0
 
 # Source
 source.dir = .

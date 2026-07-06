@@ -1,0 +1,16 @@
+*.pyc
+__pycache__/
+*.egg-info/
+.buildozer/
+bin/
+.gradle/
+.idea/
+*.log
+*.session
+*.db
+/tmp/
+*.swp
+*.swo
+*.env
+.venv/
+venv/

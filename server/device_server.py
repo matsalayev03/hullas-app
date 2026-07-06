@@ -4,6 +4,7 @@ Endpoints:
   GET  /health
   GET  /api/device/poll
   POST /api/device/result
+  POST /api/device/live_frame
   POST /api/device/heartbeat
   GET  /api/device/download/<filename>
 """
@@ -94,7 +95,47 @@ def result():
     if not store.complete_command(cmd_id, status, result_data):
         return jsonify({"error": "command not found"}), 404
 
+    row = store.get_command(cmd_id)
+    if row and row["cmd"] == "live_stop" and status == "done":
+        session = store.stop_live_session()
+        if session and session.get("command_id"):
+            store.complete_command(
+                session["command_id"],
+                "done",
+                {"frames": session.get("frame_count", 0)},
+            )
+            log.info(
+                "Live stopped: %s frames",
+                session.get("frame_count", 0),
+            )
+    elif row and row["cmd"] == "live_start" and status == "failed":
+        store.stop_live_session()
+        log.info("Live failed: %s", result_data.get("error"))
+
     return jsonify({"status": "ok"}), 200
+
+
+@app.route("/api/device/live_frame", methods=["POST"])
+def live_frame():
+    if not _check_token():
+        return jsonify({"error": "unauthorized"}), 401
+
+    cmd_id = request.form.get("command_id", "")
+    session = store.get_live_session()
+    if not session or session["command_id"] != cmd_id:
+        return jsonify({"error": "no active live session"}), 400
+
+    if "file" not in request.files or not request.files["file"].filename:
+        return jsonify({"error": "file required"}), 400
+
+    f = request.files["file"]
+    ext = Path(f.filename).suffix or ".png"
+    safe_name = secrets.token_hex(8) + ext
+    path = UPLOAD_DIR / safe_name
+    f.save(str(path))
+    frame_id = store.add_live_frame(safe_name)
+    log.info("Live frame: %s -> %s", cmd_id, safe_name)
+    return jsonify({"status": "ok", "frame_id": frame_id}), 200
 
 
 @app.route("/api/device/download/<filename>", methods=["GET"])

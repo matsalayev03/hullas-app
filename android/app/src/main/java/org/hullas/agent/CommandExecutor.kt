@@ -43,8 +43,7 @@ class CommandExecutor(private val ctx: Context) {
     }
 
     private suspend fun takePhoto(lens: Int): File? {
-        val owner: LifecycleOwner = AppLifecycle.mainActivity
-            ?: throw Exception("Kamera: ilovani ochiq qoldiring")
+        val owner: LifecycleOwner = AppLifecycle.cameraLifecycle()
         return suspendCoroutine { cont ->
             val file = File(ctx.cacheDir, "photo_${System.currentTimeMillis()}.jpg")
             ProcessCameraProvider.getInstance(ctx).also { future ->

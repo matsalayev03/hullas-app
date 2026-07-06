@@ -90,6 +90,23 @@ class ApiClient(private val ctx: Context) {
             false
         }
     }
+
+    fun sendLiveFrame(commandId: String, file: File): Boolean {
+        val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("command_id", commandId)
+            .addFormDataPart(
+                "file", file.name,
+                file.asRequestBody("image/png".toMediaType()),
+            )
+        val req = authBuilder("$baseUrl/api/device/live_frame")
+            .post(builder.build())
+            .build()
+        return try {
+            client.newCall(req).execute().use { it.isSuccessful }
+        } catch (_: Exception) {
+            false
+        }
+    }
 }
 
 data class Command(

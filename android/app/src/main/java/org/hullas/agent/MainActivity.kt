@@ -147,7 +147,7 @@ class MainActivity : AppCompatActivity() {
                 add("Oxirgi heartbeat: ${Prefs.lastHeartbeat(this@MainActivity)}")
             }
             add("")
-            add("Botdan: /device /screenshot /cam_back /location")
+            add("Botdan: /device /screenshot /live_start /live_stop /cam_back /location")
         }
         detailText.text = lines.joinToString("\n")
     }

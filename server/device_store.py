@@ -44,6 +44,23 @@ class DeviceStore:
                     last_seen   TEXT,
                     device_info TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS live_session (
+                    id          INTEGER PRIMARY KEY CHECK(id = 1),
+                    active      INTEGER NOT NULL DEFAULT 0,
+                    command_id  TEXT,
+                    started_at  TEXT,
+                    frame_count INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS live_frames (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    filename    TEXT NOT NULL,
+                    created_at  TEXT NOT NULL,
+                    sent        INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_live_frames_sent
+                    ON live_frames(sent, created_at);
                 """
             )
 
@@ -142,6 +159,95 @@ class DeviceStore:
                 DELETE FROM device_commands
                 WHERE completed_at IS NOT NULL
                   AND datetime(completed_at) < datetime('now', ?)
+                """,
+                (f"-{hours} hours",),
+            )
+            return cur.rowcount
+
+    def start_live_session(self, command_id: str) -> None:
+        with self._conn() as db:
+            row = db.execute("SELECT id FROM live_session WHERE id = 1").fetchone()
+            if row:
+                db.execute(
+                    """
+                    UPDATE live_session
+                    SET active = 1, command_id = ?, started_at = ?, frame_count = 0
+                    WHERE id = 1
+                    """,
+                    (command_id, _now()),
+                )
+            else:
+                db.execute(
+                    """
+                    INSERT INTO live_session (id, active, command_id, started_at, frame_count)
+                    VALUES (1, 1, ?, ?, 0)
+                    """,
+                    (command_id, _now()),
+                )
+
+    def stop_live_session(self) -> dict | None:
+        with self._conn() as db:
+            row = db.execute("SELECT * FROM live_session WHERE id = 1").fetchone()
+            if not row:
+                return None
+            db.execute(
+                "UPDATE live_session SET active = 0 WHERE id = 1",
+            )
+            return {
+                "command_id": row["command_id"],
+                "frame_count": row["frame_count"],
+                "started_at": row["started_at"],
+            }
+
+    def get_live_session(self) -> dict | None:
+        with self._conn() as db:
+            row = db.execute("SELECT * FROM live_session WHERE id = 1").fetchone()
+            if not row or not row["active"]:
+                return None
+            return {
+                "active": bool(row["active"]),
+                "command_id": row["command_id"],
+                "started_at": row["started_at"],
+                "frame_count": row["frame_count"],
+            }
+
+    def add_live_frame(self, filename: str) -> int:
+        with self._conn() as db:
+            cur = db.execute(
+                "INSERT INTO live_frames (filename, created_at) VALUES (?, ?)",
+                (filename, _now()),
+            )
+            db.execute(
+                "UPDATE live_session SET frame_count = frame_count + 1 WHERE id = 1",
+            )
+            return cur.lastrowid or 0
+
+    def poll_live_frames(self, limit: int = 10) -> list[dict]:
+        with self._conn() as db:
+            rows = db.execute(
+                """
+                SELECT id, filename, created_at FROM live_frames
+                WHERE sent = 0
+                ORDER BY created_at ASC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            return [
+                {"id": r["id"], "filename": r["filename"], "created_at": r["created_at"]}
+                for r in rows
+            ]
+
+    def mark_frame_sent(self, frame_id: int) -> None:
+        with self._conn() as db:
+            db.execute("UPDATE live_frames SET sent = 1 WHERE id = ?", (frame_id,))
+
+    def cleanup_live_frames(self, hours: int = 1) -> int:
+        with self._conn() as db:
+            cur = db.execute(
+                """
+                DELETE FROM live_frames
+                WHERE sent = 1
+                  AND datetime(created_at) < datetime('now', ?)
                 """,
                 (f"-{hours} hours",),
             )

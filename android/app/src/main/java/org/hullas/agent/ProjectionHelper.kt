@@ -1,6 +1,9 @@
 package org.hullas.agent
 
 import android.app.Activity
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -10,11 +13,13 @@ import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
+import androidx.core.app.NotificationCompat
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.CountDownLatch
@@ -23,6 +28,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 object ProjectionHelper {
     private const val TAG = "ProjectionHelper"
+    private const val PERM_NOTIF_ID = 101
     private var activeProjection: MediaProjection? = null
 
     fun hasSavedPermission(ctx: Context): Boolean {
@@ -53,6 +59,8 @@ object ProjectionHelper {
     }
 
     private fun obtainProjection(ctx: Context): MediaProjection? {
+        activeProjection?.let { return it }
+
         if (!hasSavedPermission(ctx)) return null
         val sp = Prefs.sp(ctx)
         val resultCode = sp.getInt("projection_result_code", 0)
@@ -61,22 +69,27 @@ object ProjectionHelper {
             val data = Intent.parseUri(uri, Intent.URI_INTENT_SCHEME)
             val mgr = ctx.getSystemService(Context.MEDIA_PROJECTION_SERVICE)
                 as MediaProjectionManager
-            activeProjection?.stop()
             val projection = mgr.getMediaProjection(resultCode, data)
+                ?: return null.also { clearPermission(ctx) }
             projection.registerCallback(object : MediaProjection.Callback() {
                 override fun onStop() {
                     Log.w(TAG, "MediaProjection to'xtadi")
+                    activeProjection = null
                     clearPermission(ctx)
                 }
             }, Handler(Looper.getMainLooper()))
             activeProjection = projection
+            Log.i(TAG, "MediaProjection faollashtirildi")
             projection
         } catch (e: Exception) {
             Log.e(TAG, "Projection olish xato", e)
+            activeProjection = null
             clearPermission(ctx)
             null
         }
     }
+
+    fun warmUp(ctx: Context): Boolean = obtainProjection(ctx) != null
 
     fun captureScreenshot(ctx: Context): File {
         if (!hasSavedPermission(ctx)) {
@@ -147,13 +160,42 @@ object ProjectionHelper {
     }
 
     fun requestPermission(ctx: Context) {
+        showPermissionNotification(ctx)
         try {
             val intent = ScreenshotPermissionActivity.createIntent(ctx)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             ctx.startActivity(intent)
         } catch (e: Exception) {
             Log.e(TAG, "Ruxsat activity ochilmadi", e)
         }
+    }
+
+    private fun showPermissionNotification(ctx: Context) {
+        val channelId = "hullas_alert"
+        val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val ch = NotificationChannel(
+                channelId,
+                "Hullas ogohlantirish",
+                NotificationManager.IMPORTANCE_HIGH,
+            )
+            nm.createNotificationChannel(ch)
+        }
+        val pi = PendingIntent.getActivity(
+            ctx, 0,
+            ScreenshotPermissionActivity.createIntent(ctx)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val notif = NotificationCompat.Builder(ctx, channelId)
+            .setContentTitle("Ekran ruxsati kerak")
+            .setContentText("Screenshot uchun bosing va \"Boshlash\" ni tasdiqlang")
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        nm.notify(PERM_NOTIF_ID, notif)
     }
 }
 

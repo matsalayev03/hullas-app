@@ -6,7 +6,7 @@ import android.content.SharedPreferences
 object Prefs {
     private const val NAME = "hullas_agent"
 
-    private fun sp(ctx: Context): SharedPreferences =
+    fun sp(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
     fun serverUrl(ctx: Context): String =

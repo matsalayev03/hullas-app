@@ -30,11 +30,7 @@ class ScreenshotPermissionActivity : Activity() {
             Intent(ctx, ScreenshotPermissionActivity::class.java)
 
         fun handleResult(ctx: Context, resultCode: Int, data: Intent) {
-            if (resultCode != Activity.RESULT_OK) return
-            val mgr = ctx.getSystemService(Context.MEDIA_PROJECTION_SERVICE)
-                as MediaProjectionManager
-            ScreenshotHolder.projection = mgr.getMediaProjection(resultCode, data)
-            Prefs.setScreenshotGranted(ctx, true)
+            ProjectionHelper.savePermission(ctx, resultCode, data)
         }
     }
 }

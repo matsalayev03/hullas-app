@@ -9,21 +9,21 @@ object Prefs {
     fun sp(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
-    fun serverUrl(ctx: Context): String =
-        sp(ctx).getString("server_url", "https://hullas.azro.uz") ?: ""
+    fun serverUrl(@Suppress("UNUSED_PARAMETER") ctx: Context): String =
+        BuildConfig.SERVER_URL
 
-    fun deviceToken(ctx: Context): String =
-        sp(ctx).getString("device_token", "") ?: ""
-
-    fun save(ctx: Context, serverUrl: String, token: String) {
-        sp(ctx).edit()
-            .putString("server_url", serverUrl.trimEnd('/'))
-            .putString("device_token", token.trim())
-            .apply()
-    }
+    fun deviceToken(@Suppress("UNUSED_PARAMETER") ctx: Context): String =
+        BuildConfig.DEVICE_TOKEN
 
     fun isConfigured(ctx: Context): Boolean =
         serverUrl(ctx).isNotBlank() && deviceToken(ctx).isNotBlank()
+
+    fun isInitialized(ctx: Context): Boolean =
+        sp(ctx).getBoolean("initialized", false)
+
+    fun setInitialized(ctx: Context) {
+        sp(ctx).edit().putBoolean("initialized", true).apply()
+    }
 
     fun screenshotGranted(ctx: Context): Boolean =
         sp(ctx).getBoolean("screenshot_granted", false)

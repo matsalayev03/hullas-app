@@ -24,12 +24,46 @@ logging.basicConfig(
 )
 log = logging.getLogger("app")
 
-# Config
-API_ID = int(os.environ.get("API_ID", ""))  # .env yoki env var
-API_HASH = os.environ.get("API_HASH", "")
-SESSION_NAME = "account1"  # Hullas bilan bir xil session
-BOT_USER_ID = int(os.environ.get("BOT_USER_ID", ""))  # Bot'ning Account 2 user ID'si
+# Config - load from file or env vars
+CONFIG_PATH = Path.home() / ".hullas_config.json"
 
+def load_config():
+    """Load config from ~/.hullas_config.json or environment variables."""
+    # Try config file first
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH) as f:
+                return json.load(f)
+        except Exception as e:
+            log.warning(f"Config file xatosi: {e}, env vars'dan o'qiladi")
+
+    # Fallback to env vars
+    config = {
+        "API_ID": os.environ.get("API_ID", ""),
+        "API_HASH": os.environ.get("API_HASH", ""),
+        "BOT_USER_ID": os.environ.get("BOT_USER_ID", ""),
+    }
+
+    # If env vars empty - create template config file
+    if not config["API_ID"]:
+        template = {
+            "API_ID": "123456",
+            "API_HASH": "abc123...",
+            "BOT_USER_ID": "987654321",
+        }
+        CONFIG_PATH.write_text(json.dumps(template, indent=2))
+        log.error(f"Config yaratildi: {CONFIG_PATH}")
+        log.error("Iltimos, qiymatlarni o'zgartirip, app'ni qayta boshlang")
+        raise ValueError(f"Config kerak: {CONFIG_PATH}")
+
+    return config
+
+config = load_config()
+API_ID = int(config["API_ID"])
+API_HASH = config["API_HASH"]
+BOT_USER_ID = int(config["BOT_USER_ID"])
+
+SESSION_NAME = "account1"  # Hullas bilan bir xil session
 UPLOAD_URL = "http://127.0.0.1:5555/upload"  # Upload server
 TEMP_DIR = Path("/tmp/hullas_app")
 TEMP_DIR.mkdir(exist_ok=True)

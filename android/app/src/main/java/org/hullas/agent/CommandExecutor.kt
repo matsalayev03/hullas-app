@@ -108,7 +108,7 @@ class CommandExecutor(private val ctx: Context) {
                 val selector = CameraSelector.Builder().requireLensFacing(lens).build()
                 // Service context — ProcessCameraProvider needs lifecycle; use fake via activity
                 // Fallback: use ImageCapture with a workaround via SetupActivity lifecycle holder
-                val lifecycle = ServiceLifecycleOwner.INSTANCE
+                val lifecycle = ServiceLifecycleOwner
                 provider.bindToLifecycle(lifecycle, selector, capture)
                 capture.takePicture(
                     ImageCapture.OutputFileOptions.Builder(file).build(),
